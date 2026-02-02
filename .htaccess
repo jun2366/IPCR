@@ -1,0 +1,14 @@
+# .htaccess — basic protection for local/dev environment
+# Disable directory listing
+Options -Indexes
+
+# Deny direct access to config and includes folders
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(config|includes)(/.*)?$ - [F,L,NC]
+</IfModule>
+
+# Recommended: prevent access to dotfiles
+<FilesMatch "^(\.|composer\.).*">
+    Require all denied
+</FilesMatch>
