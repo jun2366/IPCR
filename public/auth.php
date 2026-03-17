@@ -2,64 +2,41 @@
 require '../config/database.php';
 session_start();
 
-$user_id      = $_POST['user_id'] ?? null;
-$period_id    = $_POST['period_id'] ?? null;
-$period_month = $_POST['period_month'] ?? null;
-$period_year  = isset($_POST['period_year']) ? (int)$_POST['period_year'] : null;
+// 1. Get the values from the new dropdowns
+$user_id   = $_POST['user_id'] ?? null;
+$period_id = $_POST['period_id'] ?? null;
 
-if (!$user_id || (!$period_id && (!$period_month || !$period_year))) {
+// 2. If either is missing, kick them back to the login page
+if (!$user_id || !$period_id) {
     header('Location: index.php');
     exit;
 }
 
-// If a period_id wasn't supplied, resolve by month+year (create if missing)
-if (!$period_id) {
-    $allowedMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    if (!in_array($period_month, $allowedMonths, true)) {
-        header('Location: index.php');
-        exit;
-    }
+// 3. Validate that the user actually exists in the database
+$stmtUser = $conn->prepare("SELECT id FROM users WHERE id = ?");
+$stmtUser->bind_param("i", $user_id);
+$stmtUser->execute();
+$stmtUser->store_result();
+$userExists = $stmtUser->num_rows === 1;
+$stmtUser->close();
 
-    $stmt = $conn->prepare("SELECT id FROM login_periods WHERE month = ? AND year = ?");
-    $stmt->bind_param('si', $period_month, $period_year);
-    $stmt->execute();
-    $stmt->store_result();
+// 4. Validate that the period actually exists in the database
+$stmtPeriod = $conn->prepare("SELECT id FROM login_periods WHERE id = ?");
+$stmtPeriod->bind_param("i", $period_id);
+$stmtPeriod->execute();
+$stmtPeriod->store_result();
+$periodExists = $stmtPeriod->num_rows === 1;
+$stmtPeriod->close();
 
-    if ($stmt->num_rows === 1) {
-        $stmt->bind_result($found_id);
-        $stmt->fetch();
-        $period_id = $found_id;
-    } else if ($stmt->num_rows === 0) {
-        $ins = $conn->prepare("INSERT INTO login_periods (month, year) VALUES (?, ?)");
-        $ins->bind_param('si', $period_month, $period_year);
-        if ($ins->execute()) {
-            $period_id = $ins->insert_id;
-        } else {
-            header('Location: index.php');
-            exit;
-        }
-    } else {
-        $stmt2 = $conn->prepare("SELECT id FROM login_periods WHERE month = ? AND year = ? LIMIT 1");
-        $stmt2->bind_param('si', $period_month, $period_year);
-        $stmt2->execute();
-        $res = $stmt2->get_result()->fetch_assoc();
-        $period_id = $res['id'] ?? null;
-        if (!$period_id) { header('Location: index.php'); exit; }
-    }
-}
-
-// Validate user exists
-$stmt = $conn->prepare("SELECT id FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$stmt->store_result();
-
-if ($stmt->num_rows === 1) {
-    $_SESSION['user_id']   = $user_id;
-    $_SESSION['period_id'] = $period_id;
+// 5. If both are valid, set the session and let them into the dashboard!
+if ($userExists && $periodExists) {
+    $_SESSION['user_id']   = (int)$user_id;
+    $_SESSION['period_id'] = (int)$period_id;
+    
     header('Location: ipcr.php');
     exit;
 }
 
+// Fallback: If someone tried to tamper with the form values, send them back
 header('Location: index.php');
 exit;

@@ -4,7 +4,9 @@ require '../includes/session.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user_id = $_SESSION['user_id'];
-    $period_id = $_SESSION['period_id'];
+    
+    // Check if the form passed a specific period_id, otherwise use the session default
+    $period_id = $_POST['period_id_override'] ?? $_SESSION['period_id'];
     
     // Inputs from the form
     $narratives = $_POST['narrative'] ?? [];
@@ -39,8 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     $stmt->close();
     
-    // Redirect back to dashboard with success message
-    header("Location: ipcr.php?saved=1");
+    // Redirect back to dashboard with the specific period AND the success message trigger!
+    header("Location: ipcr.php?period_id=" . $period_id . "&msg=ipcr_saved");
     exit();
 }
 ?>

@@ -18,8 +18,7 @@ $p->execute();
 $period = $p->get_result()->fetch_assoc();
 $period_display = strtoupper($period['month'] . ' ' . $period['year']); // e.g., JULY to DECEMBER 2025
 
-// 3. Fetch Tasks & Ratings (Join with user_tasks and task_accomplishments)
-// Note: We need to LEFT JOIN task_accomplishments to get the saved ratings/narratives
+// 3. Fetch Tasks & Ratings (STRICTLY FILTERED BY PERIOD)
 $sql = "
 SELECT 
     t.id AS task_id,
@@ -33,14 +32,15 @@ SELECT
 FROM user_tasks ut
 JOIN tasks t ON t.id = ut.task_id
 LEFT JOIN task_accomplishments ta ON (ta.task_id = t.id AND ta.user_id = ? AND ta.period_id = ?)
-WHERE ut.user_id = ? 
+WHERE ut.user_id = ? AND ut.period_id = ?
 ORDER BY 
   CAST(SUBSTRING_INDEX(t.task_code,'.',1) AS UNSIGNED), 
   CAST(SUBSTRING_INDEX(t.task_code,'.',-1) AS UNSIGNED)
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("iii", $user_id, $period_id, $user_id);
+// We bind 4 parameters here ("iiii") because period_id is used twice (once for accomplishments, once for the task assignment)
+$stmt->bind_param("iiii", $user_id, $period_id, $user_id, $period_id);
 $stmt->execute();
 $result = $stmt->get_result();
 

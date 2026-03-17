@@ -2,7 +2,8 @@
 require '../config/database.php';
 
 $users = $conn->query("SELECT id, full_name FROM users ORDER BY full_name");
-$periods = $conn->query("SELECT id, month, year FROM login_periods");
+// Updated query to order periods chronologically
+$periods = $conn->query("SELECT id, month, year FROM login_periods ORDER BY year ASC, id ASC");
 ?>
 
 <!DOCTYPE html>
@@ -36,7 +37,7 @@ $periods = $conn->query("SELECT id, month, year FROM login_periods");
             <div class="logo">IP</div>
             <div>
                 <h1 id="login-heading">IPCR System</h1>
-                <p class="lead">Sign in gwapo haha</p>
+                <p class="lead">Sign in to your account</p>
             </div>
         </div>
 
@@ -51,37 +52,16 @@ $periods = $conn->query("SELECT id, month, year FROM login_periods");
                 </select>
             </div>
 
-            <div style="margin-top:12px;display:flex;gap:8px;align-items:end">
-                <div style="flex:1">
-                    <label for="period_month">Month</label>
-                    <select name="period_month" id="period_month" required>
-                        <option value="" disabled selected>Select month</option>
-                        <option value="January">January</option>
-                        <option value="February">February</option>
-                        <option value="March">March</option>
-                        <option value="April">April</option>
-                        <option value="May">May</option>
-                        <option value="June">June</option>
-                        <option value="July">July</option>
-                        <option value="August">August</option>
-                        <option value="September">September</option>
-                        <option value="October">October</option>
-                        <option value="November">November</option>
-                        <option value="December">December</option>
-                    </select>
-                </div>
-                <div style="width:120px">
-                    <label for="period_year">Year</label>
-                    <select name="period_year" id="period_year" required>
-                        <option value="" disabled selected>Select year</option>
-                        <?php
-                            $currentYear = (int)date('Y');
-                            for ($y = $currentYear - 1; $y <= $currentYear + 1; $y++) {
-                                echo "<option value=\"$y\">$y</option>\n";
-                            }
-                        ?>
-                    </select>
-                </div>
+            <div style="margin-top:12px;">
+                <label for="period_id">Semestral Period</label>
+                <select name="period_id" id="period_id" required>
+                    <option value="" disabled selected>Select period</option>
+                    <?php while ($p = $periods->fetch_assoc()): ?>
+                        <option value="<?= $p['id'] ?>">
+                            <?= htmlspecialchars($p['month'] . ' ' . $p['year']) ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
             </div>
 
             <button type="submit" id="submitBtn" disabled>Sign in</button>
@@ -94,21 +74,20 @@ $periods = $conn->query("SELECT id, month, year FROM login_periods");
 <script>
     (function(){
         const user = document.getElementById('user_id');
-        const month = document.getElementById('period_month');
-        const year = document.getElementById('period_year');
+        const period = document.getElementById('period_id');
         const submit = document.getElementById('submitBtn');
 
+        // Updated validation logic for just 2 fields
         function update() {
-            submit.disabled = !(user.value && month.value && year.value);
+            submit.disabled = !(user.value && period.value);
         }
 
         user.addEventListener('change', update);
-        month.addEventListener('change', update);
-        year.addEventListener('change', update);
+        period.addEventListener('change', update);
 
         // enable submit on keyboard selection too
         document.getElementById('loginForm').addEventListener('submit', function(e){
-            if (!user.value || !month.value || !year.value) {
+            if (!user.value || !period.value) {
                 e.preventDefault();
                 user.focus();
             } else {
