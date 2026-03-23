@@ -1,42 +1,46 @@
 <?php
-require '../config/database.php';
 session_start();
+require '../config/database.php';
 
-// 1. Get the values from the new dropdowns
-$user_id   = $_POST['user_id'] ?? null;
-$period_id = $_POST['period_id'] ?? null;
-
-// 2. If either is missing, kick them back to the login page
-if (!$user_id || !$period_id) {
-    header('Location: index.php');
-    exit;
-}
-
-// 3. Validate that the user actually exists in the database
-$stmtUser = $conn->prepare("SELECT id FROM users WHERE id = ?");
-$stmtUser->bind_param("i", $user_id);
-$stmtUser->execute();
-$stmtUser->store_result();
-$userExists = $stmtUser->num_rows === 1;
-$stmtUser->close();
-
-// 4. Validate that the period actually exists in the database
-$stmtPeriod = $conn->prepare("SELECT id FROM login_periods WHERE id = ?");
-$stmtPeriod->bind_param("i", $period_id);
-$stmtPeriod->execute();
-$stmtPeriod->store_result();
-$periodExists = $stmtPeriod->num_rows === 1;
-$stmtPeriod->close();
-
-// 5. If both are valid, set the session and let them into the dashboard!
-if ($userExists && $periodExists) {
-    $_SESSION['user_id']   = (int)$user_id;
-    $_SESSION['period_id'] = (int)$period_id;
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_id'])) {
+    $user_id = (int)$_POST['user_id'];
     
-    header('Location: ipcr.php');
-    exit;
+    $stmt = $conn->prepare("SELECT id, full_name, role FROM users WHERE id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $user = $result->fetch_assoc();
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['role'] = $user['role'];
+        
+        // CHECK IF A SPECIFIC PERIOD WAS CHOSEN ON THE LOGIN SCREEN
+        if (isset($_POST['period_id']) && !empty($_POST['period_id'])) {
+            $_SESSION['period_id'] = (int)$_POST['period_id'];
+        } else {
+            // AUTO-FETCH THE LATEST SEMESTER AS THE DEFAULT FALLBACK (For Admins)
+            $period_query = $conn->query("SELECT id FROM login_periods ORDER BY year DESC, id DESC LIMIT 1");
+            if ($period_query->num_rows > 0) {
+                $_SESSION['period_id'] = $period_query->fetch_assoc()['id'];
+            } else {
+                $_SESSION['period_id'] = 1; // Failsafe
+            }
+        }
+        
+        // ROUTING LOGIC based on Role
+        if ($user['role'] == 0 || $user['role'] == 2) {
+            // Admins & Moderators go to the main System Dashboard
+            header("Location: home.php");
+        } else {
+            // Regular Employees go straight to their own IPCR
+            header("Location: ipcr.php");
+        }
+        exit();
+    }
 }
 
-// Fallback: If someone tried to tamper with the form values, send them back
-header('Location: index.php');
-exit;
+// If something goes wrong, send them back to login
+header("Location: index.php");
+exit();
+?>

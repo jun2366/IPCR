@@ -1,7 +1,107 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     
-    // --- RATING LOGIC ---
+    // ==========================================
+    // UNSAVED CHANGES TRACKER & CUSTOM MODAL
+    // ==========================================
+    let hasUnsavedChanges = false;
+    let pendingLocation = ''; 
+
+    document.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', function(e) {
+            if (this.target === '_blank' || this.href.includes('javascript:') || this.href === '' || this.href.includes('#')) {
+                return;
+            }
+            if (hasUnsavedChanges) {
+                e.preventDefault(); 
+                pendingLocation = this.href; 
+                const modal = document.getElementById('unsaved-modal');
+                if (modal) {
+                    modal.classList.remove('hidden');
+                } else {
+                    if(confirm("You have unsaved changes. Leave anyway?")) {
+                        window.location.href = this.href;
+                    }
+                }
+            }
+        });
+    });
+
+    window.closeUnsavedModal = function() {
+        const modal = document.getElementById('unsaved-modal');
+        if (modal) modal.classList.add('hidden');
+        pendingLocation = '';
+    }
+
+    const confirmLeaveBtn = document.getElementById('confirm-leave-btn');
+    if (confirmLeaveBtn) {
+        confirmLeaveBtn.addEventListener('click', function() {
+            hasUnsavedChanges = false; 
+            window.location.href = pendingLocation; 
+        });
+    }
+
+    window.addEventListener('beforeunload', function (e) {
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = ''; 
+        }
+    });
+
+    const ipcrForm = document.getElementById('ipcr-form');
+    if (ipcrForm) {
+        ipcrForm.addEventListener('submit', function() {
+            hasUnsavedChanges = false;
+        });
+    }
+
+    // ==========================================
+    // REAL-TIME PROGRESS BAR LOGIC
+    // ==========================================
+    function updateProgress() {
+        const taskRows = document.querySelectorAll('.task-row');
+        const totalTasks = taskRows.length;
+        let completedTasks = 0;
+
+        // Count how many rows have at least one rating filled out
+        taskRows.forEach(row => {
+            const q = parseFloat(row.querySelector('input[name^="q["]').value) || 0;
+            const e = parseFloat(row.querySelector('input[name^="e["]').value) || 0;
+            const t = parseFloat(row.querySelector('input[name^="t["]').value) || 0;
+            
+            if (q > 0 || e > 0 || t > 0) {
+                completedTasks++;
+            }
+        });
+
+        const progressText = document.getElementById('progress-text');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+
+        if (progressText && progressBarFill) {
+            progressText.textContent = `${completedTasks}/${totalTasks}`;
+            
+            const percentage = totalTasks === 0 ? 0 : (completedTasks / totalTasks) * 100;
+            progressBarFill.style.width = `${percentage}%`;
+
+            // Turn Green when 100% complete!
+            if (percentage === 100) {
+                progressBarFill.classList.remove('bg-blue-600');
+                progressBarFill.classList.add('bg-emerald-500');
+                progressText.classList.remove('text-blue-600');
+                progressText.classList.add('text-emerald-500');
+            } else {
+                progressBarFill.classList.add('bg-blue-600');
+                progressBarFill.classList.remove('bg-emerald-500');
+                progressText.classList.add('text-blue-600');
+                progressText.classList.remove('text-emerald-500');
+            }
+        }
+    }
+
+
+    // ==========================================
+    // RATING LOGIC & AUTO-GENERATION
+    // ==========================================
     const ratingMatrix = <?= isset($ratingMatrixJson) ? $ratingMatrixJson : '{}' ?>;
 
     function escapeRegExp(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -74,6 +174,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.rating-input').forEach(input => {
         if (input.disabled) return; 
         input.addEventListener('input', function() {
+            
+            hasUnsavedChanges = true;
+
             const row = this.closest('.task-row');
             const taskId = row.querySelector('.smart-cell').dataset.taskId;
             const siCode = row.querySelector('.smart-cell').dataset.taskId;
@@ -103,18 +206,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 divArea.innerHTML = "";
                 hiddenInput.value = "";
             }
+            
+            // Trigger our new functions!
             updateGrandTotal();
+            updateProgress();
         });
     });
     
     document.querySelectorAll('.smart-area').forEach(div => {
         div.addEventListener('input', function() {
+            hasUnsavedChanges = true;
             const id = this.id.replace('div-', '');
             document.getElementById('input-' + id).value = this.innerHTML;
         });
     });
 
-    // 1. DELETE MODAL
+    // ==========================================
+    // EXISTING MODALS
+    // ==========================================
     window.openDeleteModal = function(deleteUrl) {
         document.getElementById('confirm-delete-btn').href = deleteUrl;
         document.getElementById('delete-modal').classList.remove('hidden');
@@ -123,7 +232,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('delete-modal').classList.add('hidden');
     }
 
-    // 2. EDIT MODAL
     window.openEditModal = function(btn) {
         const id = btn.dataset.id;
         const code = btn.dataset.code;
@@ -149,5 +257,9 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => toast.remove(), 500);
         }, 5000);
     }
+
+    // Run calculations once on page load to fill the bar and averages immediately!
+    updateGrandTotal();
+    updateProgress();
 });
 </script>

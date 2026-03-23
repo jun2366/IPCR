@@ -19,7 +19,7 @@ if (!$is_superadmin) { header("Location: ipcr.php"); exit(); }
 $periods_query = $conn->query("SELECT id, month, year FROM login_periods ORDER BY year ASC, id ASC");
 
 // 3. Fetch all users
-$users_query = $conn->query("SELECT id, full_name, role FROM users ORDER BY full_name ASC");
+$users_query = $conn->query("SELECT id, full_name, role FROM users WHERE (role IS NULL OR role NOT IN (2)) AND id < 100 ORDER BY full_name ASC");
 
 // --- PLACEHOLDER DATA FOR THE RATING MATRIX ---
 $q_placeholders = [

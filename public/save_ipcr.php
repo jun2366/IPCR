@@ -3,7 +3,9 @@ require '../config/database.php';
 require '../includes/session.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $user_id = $_SESSION['user_id'];
+    // CRITICAL FIX: Check if we are saving for someone else (Admin/Mod action)
+    // If target_user_id exists in the form, use it. Otherwise, use the logged-in user.
+    $user_id = $_POST['target_user_id'] ?? $_SESSION['user_id'];
     
     // Check if the form passed a specific period_id, otherwise use the session default
     $period_id = $_POST['period_id_override'] ?? $_SESSION['period_id'];
@@ -41,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     $stmt->close();
     
-    // Redirect back to dashboard with the specific period AND the success message trigger!
-    header("Location: ipcr.php?period_id=" . $period_id . "&msg=ipcr_saved");
+    // Redirect back to the specific user's IPCR dashboard with the success message!
+    header("Location: ipcr.php?uid=" . $user_id . "&period_id=" . $period_id . "&msg=ipcr_saved");
     exit();
 }
 ?>

@@ -2,8 +2,31 @@
 require '../config/database.php';
 require '../includes/session.php';
 
-$user_id   = $_SESSION['user_id'];
+// 1. Get LOGGED-IN User's ID and Permissions
+$logged_in_user_id = $_SESSION['user_id'];
 
+$u_logged = $conn->prepare("SELECT role FROM users WHERE id=?");
+$u_logged->bind_param("i", $logged_in_user_id);
+$u_logged->execute();
+$logged_role = (int)$u_logged->get_result()->fetch_assoc()['role'];
+
+// Set capabilities based on who is holding the mouse (Logged-in user)
+$is_superadmin = ($logged_role === 0); 
+$can_create    = ($logged_role === 0); 
+$can_edit      = ($logged_role === 0 || $logged_role === 2); 
+$can_delete    = ($logged_role === 0 || $logged_role === 2); 
+
+$input_state = $can_edit ? '' : 'disabled';
+$content_editable_state = $can_edit ? 'true' : 'false';
+
+// 2. Determine the TARGET User (Whose IPCR are we looking at?)
+if (isset($_GET['uid']) && $can_edit) {
+    $target_user_id = intval($_GET['uid']);
+} else {
+    $target_user_id = $logged_in_user_id;
+}
+
+// 3. Handle Semestral Period
 if (isset($_GET['period_id']) && is_numeric($_GET['period_id'])) {
     $period_id = intval($_GET['period_id']);
 } else {
@@ -18,19 +41,11 @@ if (isset($_GET['msg']) && $_GET['msg'] == 'deleted' && isset($_GET['undo_task']
                  "&target_user_id=" . $_GET['undo_user'];
 }
 
-$u = $conn->prepare("SELECT full_name, position, division, role FROM users WHERE id=?");
-$u->bind_param("i", $user_id);
-$u->execute();
-$user = $u->get_result()->fetch_assoc();
-$role = (int)$user['role']; 
-
-$is_superadmin = ($role === 0); 
-$can_edit      = ($role <= 1); 
-$can_create    = ($role === 0); 
-$can_delete    = ($role === 0); 
-
-$input_state = $can_edit ? '' : 'disabled';
-$content_editable_state = $can_edit ? 'true' : 'false';
+// 4. Fetch TARGET User's details for the Commitment Statement Header
+$u_target = $conn->prepare("SELECT full_name, position, division, role FROM users WHERE id=?");
+$u_target->bind_param("i", $target_user_id);
+$u_target->execute();
+$user = $u_target->get_result()->fetch_assoc();
 
 $p = $conn->prepare("SELECT month, year FROM login_periods WHERE id=?");
 $p->bind_param("i", $period_id);
@@ -46,7 +61,8 @@ WHERE ut.user_id = ? AND ut.period_id = ?
 ORDER BY CAST(SUBSTRING_INDEX(t.task_code,'.',1) AS UNSIGNED), CAST(SUBSTRING_INDEX(t.task_code,'.',-1) AS UNSIGNED)
 ";
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("ii", $user_id, $period_id);
+
+$stmt->bind_param("ii", $target_user_id, $period_id);
 $stmt->execute();
 $tasks = $stmt->get_result();
 
@@ -75,20 +91,30 @@ require '../includes/sidebar.php';
             <h1 class="text-xl font-bold text-slate-800">Performance Review <span class="text-slate-400 text-sm font-normal ml-2">Period: <?= $period_display ?></span></h1>
             
             <div class="flex items-center space-x-6">
+                
                 <div class="text-right">
                     <p class="text-xs text-slate-500 uppercase tracking-wide font-semibold">Final Rating</p>
                     <p class="text-2xl font-bold text-blue-600 leading-none" id="header-grand-avg">0.00</p>
                 </div>
-                <div class="h-10 w-px bg-slate-200"></div>
-                <div class="text-right">
-                    <p class="text-xs text-slate-500 uppercase tracking-wide font-semibold">Adjectival</p>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800" id="header-adjectival">---</span>
+                
+                <div class="h-8 w-px bg-slate-200"></div>
+                
+                <div class="w-40">
+                    <div class="flex justify-between items-end mb-1.5">
+                        <p class="text-[10px] text-slate-500 uppercase tracking-wide font-bold">Grading Progress</p>
+                        <p class="text-[11px] font-black text-blue-600 leading-none" id="progress-text">0/0</p>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5 shadow-inner overflow-hidden">
+                        <div id="progress-bar-fill" class="bg-blue-600 h-1.5 rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+                    </div>
                 </div>
+
+                <span id="header-adjectival" class="hidden"></span>
                 
                 <?php if($can_edit): ?>
-                <button type="submit" form="ipcr-form" class="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">Save Changes</button>
+                <button type="submit" form="ipcr-form" class="ml-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition">Save Changes</button>
                 <?php else: ?>
-                 <span class="ml-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Read Only View</span>
+                 <span class="ml-2 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Read Only</span>
                 <?php endif; ?>
             </div>
         </header>
@@ -111,6 +137,8 @@ require '../includes/sidebar.php';
                 </div>
 
                 <form id="ipcr-form" method="POST" action="save_ipcr.php">
+                    <input type="hidden" name="target_user_id" value="<?= $target_user_id ?>">
+                    
                     <div class="space-y-6">
                         <?php while ($t = $tasks->fetch_assoc()): $siCode = trim($t['task_code']); ?>
                         <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow duration-200 task-row" id="row-<?= $t['task_id'] ?>">
@@ -128,12 +156,12 @@ require '../includes/sidebar.php';
                                         </div>
                                     </div>
                                     
-                                    <?php if ($is_superadmin): ?>
-                                    <div class="mt-4 pt-3 border-t border-slate-200/60 flex items-center space-x-4">
+                                    <?php if ($can_edit || $can_delete): ?>
+                                        <div class="mt-4 pt-3 border-t border-slate-200/60 flex items-center space-x-4">
                                         <button type="button" onclick="openEditModal(this)" data-id="<?= $t['task_id'] ?>" data-code="<?= htmlspecialchars($t['task_code']) ?>" data-title="<?= htmlspecialchars($t['task_title']) ?>" data-si="<?= htmlspecialchars($t['success_indicator']) ?>" class="text-xs flex items-center text-blue-600 hover:text-blue-800 font-medium transition group">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-500 group-hover:text-blue-700" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg> Edit Task
                                         </button>
-                                        <button type="button" onclick="openDeleteModal('delete_task_assignment.php?task_id=<?= $t['task_id'] ?>&period_id=<?= $period_id ?>&target_user_id=<?= $user_id ?>')" class="text-xs flex items-center text-red-600 hover:text-red-800 font-medium transition group">
+                                        <button type="button" onclick="openDeleteModal('delete_task_assignment.php?task_id=<?= $t['task_id'] ?>&period_id=<?= $period_id ?>&target_user_id=<?= $target_user_id ?>')" class="text-xs flex items-center text-red-600 hover:text-red-800 font-medium transition group">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-red-500 group-hover:text-red-700" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 000-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg> Remove
                                         </button>
                                     </div>
@@ -165,11 +193,10 @@ require '../includes/sidebar.php';
                     </div>
                     
                     <div class="mt-8 flex justify-end space-x-4 mb-12">
-                        <a href="print_ipcr.php?period_id=<?= $period_id ?>" target="_blank" class="inline-flex items-center px-4 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 focus:outline-none transition">
+                        <a href="print_ipcr.php?period_id=<?= $period_id ?>&uid=<?= $target_user_id ?>" target="_blank" class="inline-flex items-center px-4 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 focus:outline-none transition">
                             <svg class="mr-2 -ml-1 h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2-4h6a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2zm9-12h2m-6 0h-2" /></svg>
                             Print IPCR Form
                         </a>
-                        
                     </div>
                 </form>
             </div>
